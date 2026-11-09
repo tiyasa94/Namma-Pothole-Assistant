@@ -141,12 +141,6 @@ async def get_route_score(
     scored: List[RouteScore] = []
     from datetime import timezone
 
-    # Deterministic per-route score nudges (simulates different road conditions).
-    # Each route's waypoint already crosses a different DB area; these nudges add
-    # a realistic spread so scores look meaningfully different in the demo even
-    # when the seed dataset has even coverage.
-    _SCORE_NUDGE = [0, -18, -32, -45, -58]
-
     for idx, route in enumerate(raw_routes):
         potholes_data = await _potholes_on_route(route["wkt"], db)
 
@@ -161,9 +155,9 @@ async def get_route_score(
             for p in potholes_data
         ]
 
-        raw_score = compute_road_quality_score(entries)
-        # Apply nudge and clamp to [10, 100]
-        score = max(10, min(100, raw_score + _SCORE_NUDGE[idx]))
+        # Use the actual route distance so density (potholes/km) is normalised
+        # correctly — a short route with 2 potholes scores worse than a long one.
+        score = compute_road_quality_score(entries, segment_length_km=route["distance_km"])
         label = score_to_label(score)
 
         # Find the worst segment (lowest quality_score) along this route

@@ -452,8 +452,11 @@ of the road and recommends the smoothest one — sorted best first.
                     cc3.metric("ETA",       f"{route['eta_minutes']:.0f} min")
                     cc4.metric("Hotspots",  route["hotspot_count"])
                     ws = route.get("worst_segment")
-                    if ws:
-                        st.warning(f"⚠️ Worst stretch: **{ws['name']}** — score {ws['score']:.0f}/100")
+                    if route["hotspot_count"] > 0:
+                        if ws:
+                            st.warning(f"⚠️ Worst stretch: **{ws['name']}** — score {ws['score']:.0f}/100")
+                        else:
+                            st.warning(f"⚠️ {route['hotspot_count']} pothole hotspot(s) detected on this route.")
                     else:
                         st.success("✅ No significant pothole hotspots on this route.")
         elif result:
