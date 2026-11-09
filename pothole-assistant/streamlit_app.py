@@ -424,11 +424,11 @@ of the road and recommends the smoothest one — sorted best first.
             st_folium(m, height=300, use_container_width=True)
 
             ROUTE_VIAS = [
-                "Direct route",
-                "Via Outer Ring Road",
-                "Via Hosur Road bypass",
-                "Northern arc (NH44)",
-                "Southern loop (Bannerghatta Rd)",
+                "Via Silk Board – Koramangala",
+                "Via Bannerghatta Road – JP Nagar",
+                "Via NH44 – Hebbal Flyover",
+                "Via Outer Ring Road (ORR)",
+                "Via Hosur Road – Electronic City",
             ]
 
             for i, route in enumerate(routes):

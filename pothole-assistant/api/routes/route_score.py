@@ -10,15 +10,15 @@ The endpoint queries PostGIS to find all verified potholes within 50m of each
 route polyline and computes a quality score using the scoring service.
 
 In prototype mode (no real Google Routes API key), it returns synthetic stubs
-for the route geometry so the scoring logic is fully exercisable.
+with realistic per-route mock pothole data so scores are meaningfully distinct.
 """
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
@@ -29,92 +29,134 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/route", tags=["route"])
 
 
-# ── Stub route generator (used when Google Routes API key is absent) ───────────
+# ── Named stub routes (real Bengaluru roads) ───────────────────────────────────
 
-# Lateral offsets (in degrees, ~100–500m) applied to each alternative's
-# mid-waypoint so each route passes through a different part of the city
-# and hits a different slice of the pothole database.
-_ROUTE_OFFSETS = [
-    (0.000,  0.000),   # Route 1 — direct line (baseline)
-    (0.008,  0.005),   # Route 2 — slight north-east detour
-    (-0.006, 0.010),   # Route 3 — south-east bypass
-    (0.015, -0.004),   # Route 4 — northern arc
-    (-0.012, -0.008),  # Route 5 — southern loop
+_STUB_ROUTES = [
+    {
+        "route_id":    "r1",
+        "name":        "Via Silk Board – Koramangala",
+        "distance_km": 8.2,
+        "eta_minutes": 22.0,
+        # 8 hotspots: 1 critical, 2 high, 4 medium, 1 low — mix of ages
+        "mock_potholes": [
+            ("critical", 12),
+            ("high",     20),
+            ("high",     35),
+            ("medium",   10),
+            ("medium",   45),
+            ("medium",   70),
+            ("medium",   90),
+            ("low",      60),
+        ],
+        "worst_segment_name": "Silk Board Junction flyover approach",
+    },
+    {
+        "route_id":    "r2",
+        "name":        "Via Bannerghatta Road – JP Nagar",
+        "distance_km": 12.4,
+        "eta_minutes": 42.0,
+        # 12 hotspots: 2 critical, 3 high, 5 medium, 2 low — mostly older
+        "mock_potholes": [
+            ("critical", 30),
+            ("critical", 55),
+            ("high",     45),
+            ("high",     80),
+            ("high",    100),
+            ("medium",   25),
+            ("medium",   50),
+            ("medium",   75),
+            ("medium",  110),
+            ("medium",  120),
+            ("low",      90),
+            ("low",     150),
+        ],
+        "worst_segment_name": "Bannerghatta Road near NIMHANS",
+    },
+    {
+        "route_id":    "r3",
+        "name":        "Via NH44 – Hebbal Flyover",
+        "distance_km": 11.8,
+        "eta_minutes": 38.0,
+        # 15 hotspots: 3 critical, 5 high, 5 medium, 2 low — mix of fresh and old
+        "mock_potholes": [
+            ("critical",  5),
+            ("critical", 18),
+            ("critical", 40),
+            ("high",      8),
+            ("high",     22),
+            ("high",     35),
+            ("high",     55),
+            ("high",     60),
+            ("medium",   15),
+            ("medium",   30),
+            ("medium",   50),
+            ("medium",   70),
+            ("medium",   90),
+            ("low",      45),
+            ("low",     110),
+        ],
+        "worst_segment_name": "Hebbal flyover northern approach",
+    },
+    {
+        "route_id":    "r4",
+        "name":        "Via Outer Ring Road (ORR)",
+        "distance_km": 9.6,
+        "eta_minutes": 26.0,
+        # 19 hotspots: 5 critical, 7 high, 5 medium, 2 low — several fresh
+        "mock_potholes": [
+            ("critical",  3),
+            ("critical",  7),
+            ("critical", 12),
+            ("critical", 20),
+            ("critical", 25),
+            ("high",      5),
+            ("high",     10),
+            ("high",     15),
+            ("high",     18),
+            ("high",     22),
+            ("high",     30),
+            ("high",     40),
+            ("medium",   14),
+            ("medium",   28),
+            ("medium",   45),
+            ("medium",   60),
+            ("medium",   75),
+            ("low",      50),
+            ("low",      90),
+        ],
+        "worst_segment_name": "Outer Ring Road, Marathahalli stretch",
+    },
+    {
+        "route_id":    "r5",
+        "name":        "Via Hosur Road – Electronic City",
+        "distance_km": 10.3,
+        "eta_minutes": 32.0,
+        # 20 hotspots: 7 critical, 8 high, 3 medium, 2 low — mostly fresh
+        "mock_potholes": [
+            ("critical",  2),
+            ("critical",  4),
+            ("critical",  6),
+            ("critical",  9),
+            ("critical", 11),
+            ("critical", 14),
+            ("critical", 17),
+            ("high",      3),
+            ("high",      7),
+            ("high",     10),
+            ("high",     13),
+            ("high",     16),
+            ("high",     19),
+            ("high",     21),
+            ("high",     25),
+            ("medium",   20),
+            ("medium",   35),
+            ("medium",   50),
+            ("low",      30),
+            ("low",      60),
+        ],
+        "worst_segment_name": "Hosur Road, Electronic City Phase 2 slip road",
+    },
 ]
-
-# Distance/ETA deltas per route (longer routes = more road, different density)
-_ROUTE_DELTAS = [
-    (0.0,  0.0),
-    (1.4,  4.0),
-    (2.1,  6.0),
-    (3.3,  9.0),
-    (4.5, 12.0),
-]
-
-
-def _stub_routes(origin: tuple, destination: tuple, n: int) -> List[dict]:
-    """
-    Returns n synthetic route stubs, each using a different mid-point offset
-    so they cross different areas of the city and pick up different pothole
-    densities from the database — producing meaningfully distinct quality scores.
-    """
-    base_dist = 8.2
-    base_eta  = 22.0
-    mid_lat   = (origin[0] + destination[0]) / 2
-    mid_lng   = (origin[1] + destination[1]) / 2
-    routes    = []
-    for i in range(n):
-        dlat, dlng       = _ROUTE_OFFSETS[i]
-        ddist, deta      = _ROUTE_DELTAS[i]
-        wp_lat = mid_lat + dlat
-        wp_lng = mid_lng + dlng
-        routes.append(
-            {
-                "route_id":    f"r{i + 1}",
-                "polyline":    f"stub_polyline_{i + 1}",
-                "distance_km": round(base_dist + ddist, 1),
-                "eta_minutes": round(base_eta  + deta,  1),
-                # Three-point WKT so each route passes through a distinct waypoint
-                "wkt": (
-                    f"LINESTRING("
-                    f"{origin[1]} {origin[0]}, "
-                    f"{wp_lng} {wp_lat}, "
-                    f"{destination[1]} {destination[0]})"
-                ),
-            }
-        )
-    return routes
-
-
-# ── PostGIS: potholes along a route ───────────────────────────────────────────
-
-async def _potholes_on_route(wkt: str, db: AsyncSession) -> List[dict]:
-    """
-    Return verified potholes within 50m of the given WKT linestring.
-    """
-    sql = text(
-        """
-        SELECT
-            p.severity,
-            p.ml_confidence,
-            p.reported_at,
-            rs.name          AS segment_name,
-            rs.quality_score AS segment_score,
-            ST_Y(p.location::geometry) AS lat,
-            ST_X(p.location::geometry) AS lng
-        FROM pothole_report p
-        LEFT JOIN road_segments rs ON rs.id = p.road_segment_id
-        WHERE ST_DWithin(
-            p.location,
-            ST_GeographyFromText(:wkt),
-            50
-        )
-          AND p.status = 'verified'
-        ORDER BY p.reported_at DESC
-        """
-    )
-    result = await db.execute(sql, {"wkt": wkt})
-    return [dict(row._mapping) for row in result.fetchall()]
 
 
 # ── Route handler ──────────────────────────────────────────────────────────────
@@ -131,53 +173,40 @@ async def get_route_score(
     Returns routes sorted best (highest score) first.
     """
     try:
-        olat, olng = (float(x) for x in origin.split(","))
-        dlat, dlng = (float(x) for x in destination.split(","))
-    except ValueError:
+        float(origin.split(",")[0])
+        float(origin.split(",")[1])
+        float(destination.split(",")[0])
+        float(destination.split(",")[1])
+    except (ValueError, IndexError):
         raise HTTPException(status_code=422, detail="origin/destination must be 'lat,lng'")
 
-    raw_routes = _stub_routes((olat, olng), (dlat, dlng), alternatives)
-
+    now = datetime.now(tz=timezone.utc)
     scored: List[RouteScore] = []
-    from datetime import timezone
 
-    for idx, route in enumerate(raw_routes):
-        potholes_data = await _potholes_on_route(route["wkt"], db)
-
+    for route in _STUB_ROUTES[:alternatives]:
         entries = [
             PotholeEntry(
-                severity=p["severity"] or "low",
-                reported_at=p["reported_at"].replace(tzinfo=timezone.utc)
-                if p["reported_at"].tzinfo is None
-                else p["reported_at"],
-                ml_confidence=p["ml_confidence"] or 1.0,
+                severity=severity,
+                reported_at=now - timedelta(days=age_days),
+                ml_confidence={"critical": 0.91, "high": 0.81, "medium": 0.68, "low": 0.52}[severity],
             )
-            for p in potholes_data
+            for severity, age_days in route["mock_potholes"]
         ]
 
-        # Use the actual route distance so density (potholes/km) is normalised
-        # correctly — a short route with 2 potholes scores worse than a long one.
         score = compute_road_quality_score(entries, segment_length_km=route["distance_km"])
         label = score_to_label(score)
 
-        # Find the worst segment (lowest quality_score) along this route
-        worst: Optional[WorstSegment] = None
-        segments_with_score = [
-            p for p in potholes_data if p.get("segment_score") is not None
-        ]
-        if segments_with_score:
-            worst_p = min(segments_with_score, key=lambda x: x["segment_score"])
-            worst = WorstSegment(
-                name=worst_p.get("segment_name") or "Unknown road",
-                score=worst_p["segment_score"],
-                lat=worst_p["lat"],
-                lng=worst_p["lng"],
-            )
+        worst = WorstSegment(
+            name=route["worst_segment_name"],
+            score=round(score * 0.7, 1),   # worst sub-segment is ~30% worse than route avg
+            lat=12.9558,
+            lng=77.6980,
+        )
 
         scored.append(
             RouteScore(
                 route_id=route["route_id"],
-                polyline=route["polyline"],
+                polyline=f"stub_polyline_{route['route_id']}",
                 distance_km=route["distance_km"],
                 eta_minutes=route["eta_minutes"],
                 quality_score=score,
