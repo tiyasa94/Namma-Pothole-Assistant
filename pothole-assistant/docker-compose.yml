@@ -1,0 +1,80 @@
+# ============================================================
+# Bengaluru Pothole Assistant — local dev stack
+#
+# Services:
+#   db        PostgreSQL 15 + PostGIS 3.4
+#   api       FastAPI backend (auto-reload)
+#   pgadmin   Web UI for DB inspection (optional)
+#
+# Usage:
+#   docker compose up --build
+#   API → http://localhost:8000/docs
+#   pgAdmin → http://localhost:5050  (admin@pothole.dev / pothole)
+# ============================================================
+
+services:
+
+  # ── PostgreSQL + PostGIS ────────────────────────────────────────────────────
+  db:
+    image: postgis/postgis:15-3.4
+    container_name: pothole_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pothole
+      POSTGRES_PASSWORD: pothole
+      POSTGRES_DB: potholedb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Auto-run migrations on first start
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pothole -d potholedb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI backend ─────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pothole_api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Override DB URL to use the compose service name
+      DATABASE_URL: postgresql+asyncpg://pothole:pothole@db:5432/potholedb
+      APP_ENV: development
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./api:/app/api          # live-reload source mount
+      - ./models:/app/models    # ML model weights (place .pt/.pth here)
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      uvicorn api.main:app
+        --host 0.0.0.0
+        --port 8000
+        --reload
+
+  # ── pgAdmin (optional — comment out if not needed) ──────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pothole_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@pothole.dev
+      PGADMIN_DEFAULT_PASSWORD: pothole
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    profiles:
+      - debug   # start only with: docker compose --profile debug up
+
+volumes:
+  pgdata:

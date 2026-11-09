@@ -1,0 +1,39 @@
+# ── FastAPI core ───────────────────────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.8.2
+pydantic-settings==2.4.0
+
+# ── Database ───────────────────────────────────────────────────────────────────
+sqlalchemy[asyncio]==2.0.35
+asyncpg==0.29.0           # async PostgreSQL driver
+psycopg2-binary==2.9.9    # sync driver (used by Alembic / scripts)
+geoalchemy2==0.15.2        # PostGIS geography column support
+alembic==1.13.3            # DB migrations (future use)
+
+# ── Geospatial ─────────────────────────────────────────────────────────────────
+h3==3.7.7                  # Uber H3 hexagonal indexing
+shapely==2.0.6
+
+# ── Image processing ───────────────────────────────────────────────────────────
+Pillow==10.4.0
+numpy==1.26.4
+
+# ── ML — YOLOv8 is imported lazily (inside try/except) at first image use.
+# ultralytics is NOT listed here because it pulls in torch (~2 GB) which
+# breaks the Docker build on CI / slim images.  The ML engine falls back to
+# PIL heuristics automatically when ultralytics is absent — which is fine for
+# the prototype.  Install manually if you want real YOLO inference:
+#   pip install ultralytics --extra-index-url https://download.pytorch.org/whl/cpu
+
+# ── Voice / ASR ────────────────────────────────────────────────────────────────
+SpeechRecognition==3.10.4  # Google Speech API wrapper (free, no key needed)
+deep-translator==1.11.4    # Google Translate wrapper (free, no key needed)
+langdetect==1.0.9          # Language detection from transcribed text
+PyAudio==0.2.14            # Audio I/O (required by SpeechRecognition for mic; also WAV decode)
+pydub==0.25.1              # Audio format conversion (MP3/OGG → WAV)
+
+# ── Testing ────────────────────────────────────────────────────────────────────
+pytest==8.3.3
+pytest-asyncio==0.24.0
+httpx==0.27.2              # async test client for FastAPI
