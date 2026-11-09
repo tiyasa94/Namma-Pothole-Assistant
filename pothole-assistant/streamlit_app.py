@@ -1,6 +1,6 @@
 """
-Bengaluru Pothole Assistant — Streamlit Prototype
-=================================================
+Namma Pothole Assistant — Streamlit App
+========================================
 Two personas, two tabs:
   🧑 Citizen  — Report pothole (photo + voice), Route planner
   🏛️  BBMP     — Hotspot heatmap, Maintenance logging
@@ -39,7 +39,7 @@ SCORE_COLOUR = {
 
 # ── Page setup ─────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Bengaluru Pothole Assistant",
+    page_title="Namma Pothole Assistant",
     page_icon="🛣️",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -138,8 +138,19 @@ if "report_pin" not in st.session_state:
 
 
 # ── Top header ─────────────────────────────────────────────────────────────────
-st.markdown("## 🛣️ Bengaluru Pothole Assistant")
-st.caption("Prototype v0.1 · API: `http://localhost:8000` · [Swagger docs](http://localhost:8000/docs)")
+st.markdown("## 🛣️ Namma Pothole Assistant")
+st.markdown(
+    """
+    <p style="font-size:15px; color:#4b5563; line-height:1.7; margin-top:-6px;">
+    Bengaluru generates thousands of pothole complaints every monsoon — yet most go unresolved for weeks.
+    <b>Namma Pothole Assistant</b> bridges the gap between citizens and the BBMP by letting anyone report
+    a pothole in seconds using a photo or voice note. AI automatically assesses severity, pins the location
+    on a live map, and scores every road in real time. Commuters get the safest route before they leave home.
+    Officers see exactly which streets need urgent repair — no spreadsheets, no guesswork.
+    </p>
+    """,
+    unsafe_allow_html=True,
+)
 st.divider()
 
 # ── Two persona tabs ───────────────────────────────────────────────────────────
