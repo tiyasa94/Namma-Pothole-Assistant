@@ -280,7 +280,7 @@ or record a description. Choose the severity and submit the report.
                     transcript = api_post(
                         "/voice-report/transcribe",
                         {"audio_base64": audio_b64, "language_hint": selected_lang},
-                        timeout=90,
+                        timeout=180,
                     )
                 if transcript and transcript.get("english_text"):
                     st.session_state["pending_voice_description"] = transcript["english_text"]

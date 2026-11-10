@@ -88,8 +88,12 @@ Every monsoon, ~50,000 potholes appear across the city. Residents have no way to
 | Spatial DB | PostgreSQL 15 + PostGIS 3.4 |
 | Spatial index | Uber H3 hexagonal grid |
 | ORM | SQLAlchemy 2 (async) + GeoAlchemy2 |
-| Voice | SpeechRecognition (Google Speech, free) + deep-translator + langdetect |
+| Voice | Google Speech Recognition with local faster-whisper fallback + deep-translator + langdetect |
 | Containerisation | Docker + Docker Compose |
+
+If Google Speech Recognition cannot identify a recording, the API falls back to
+the multilingual faster-whisper `base` model on CPU. The model is downloaded on
+the first fallback transcription and cached inside the API container.
 
 ---
 

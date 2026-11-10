@@ -28,6 +28,7 @@ numpy==1.26.4
 
 # ── Voice / ASR ────────────────────────────────────────────────────────────────
 SpeechRecognition==3.10.4  # Google Speech API wrapper (free, no key needed)
+faster-whisper==1.1.0      # Local multilingual fallback when Google returns no transcript
 deep-translator==1.11.4    # Google Translate wrapper (free, no key needed)
 langdetect==1.0.9          # Language detection from transcribed text
 PyAudio==0.2.14            # Audio I/O (required by SpeechRecognition for mic; also WAV decode)

@@ -52,6 +52,7 @@ services:
     volumes:
       - ./api:/app/api          # live-reload source mount
       - ./models:/app/models    # ML model weights (place .pt/.pth here)
+      - whisper_cache:/root/.cache/huggingface  # keep the local ASR model between restarts
     depends_on:
       db:
         condition: service_healthy
@@ -78,3 +79,4 @@ services:
 
 volumes:
   pgdata:
+  whisper_cache:

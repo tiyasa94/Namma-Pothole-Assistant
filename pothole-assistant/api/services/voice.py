@@ -20,8 +20,10 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import os
 import tempfile
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -131,7 +133,8 @@ def _transcribe_audio(audio_bytes: bytes, language: str) -> tuple[str, float]:
     recognizer = sr.Recognizer()
     bcp47 = LANG_TO_BCP47.get(language, "en-IN")
 
-    # Write audio to a temp file — SpeechRecognition needs a file-like object
+    # Streamlit records WAV at 16 kHz. Decode it and normalize quiet recordings
+    # before sending them to the recognizer.
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         tmp.write(audio_bytes)
         tmp_path = tmp.name
@@ -139,12 +142,70 @@ def _transcribe_audio(audio_bytes: bytes, language: str) -> tuple[str, float]:
     try:
         with sr.AudioFile(tmp_path) as source:
             audio = recognizer.record(source)
+        audio = _normalize_audio(audio, sr)
         text = recognizer.recognize_google(audio, language=bcp47)
         return text, 0.85
     except sr.UnknownValueError:
         return "", 0.0
     except sr.RequestError as exc:
         raise RuntimeError(f"Google Speech API unavailable: {exc}") from exc
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def _normalize_audio(audio, speech_recognition_module):
+    """Resample to a common format and amplify very quiet microphone input."""
+    import numpy as np
+
+    sample_rate = 16000
+    raw = audio.get_raw_data(convert_rate=sample_rate, convert_width=2)
+    samples = np.frombuffer(raw, dtype="<i2").astype(np.float32)
+    if samples.size == 0:
+        return audio
+
+    rms = float(np.sqrt(np.mean(samples * samples)))
+    if 0 < rms < 3500:
+        samples *= min(8.0, 3500.0 / rms)
+    samples = np.clip(samples, -32768, 32767).astype("<i2")
+    return speech_recognition_module.AudioData(samples.tobytes(), sample_rate, 2)
+
+
+@lru_cache(maxsize=1)
+def _get_local_whisper_model():
+    """Load a small multilingual CPU model only when Google returns no text."""
+    from faster_whisper import WhisperModel
+
+    model_size = os.getenv("WHISPER_MODEL_SIZE", "base")
+    return WhisperModel(
+        model_size,
+        device="cpu",
+        compute_type="int8",
+        cpu_threads=max(1, min(4, os.cpu_count() or 1)),
+    )
+
+
+def _transcribe_with_local_whisper(
+    audio_bytes: bytes,
+    language_hint: Optional[str],
+) -> tuple[str, str, float]:
+    """Fallback ASR that works locally for English, Hindi, and Kannada."""
+    model = _get_local_whisper_model()
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        tmp.write(audio_bytes)
+        tmp_path = tmp.name
+
+    try:
+        segments, info = model.transcribe(
+            tmp_path,
+            language=language_hint or None,
+            beam_size=3,
+            vad_filter=True,
+            no_speech_threshold=0.6,
+        )
+        text = " ".join(segment.text.strip() for segment in segments).strip()
+        detected_language = info.language or language_hint or "en"
+        confidence = float(info.language_probability or 0.0)
+        return text, detected_language, confidence
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
@@ -178,12 +239,8 @@ def _try_all_languages(audio_bytes: bytes) -> tuple[str, str, float]:
         except Exception as exc:
             logger.debug("Transcription attempt for %s failed: %s", lang, exc)
 
-    # Do not report a network outage as unintelligible speech.
-    if not best_text and request_errors:
-        raise RuntimeError(
-            "Speech recognition could not reach Google. Check that the API "
-            "container has internet access, or choose a language and try again."
-        )
+    if request_errors:
+        logger.warning("Google speech recognition request errors: %s", request_errors)
 
     return best_text, best_lang, best_conf
 
@@ -212,22 +269,43 @@ async def transcribe(
         )
 
     try:
-        if language_hint and language_hint in SUPPORTED_LANGS:
-            # User specified a language — use it directly
-            text, conf = _transcribe_audio(audio_bytes, language_hint)
-            detected_lang = language_hint if text else "en"
-        else:
-            # Auto-detect by trying all languages
-            text, detected_lang, conf = _try_all_languages(audio_bytes)
-            # Refine detection using the text content
-            if text:
-                detected_lang = _detect_language(text)
+        detected_lang = language_hint if language_hint in SUPPORTED_LANGS else "en"
+        google_error = None
+        try:
+            if language_hint and language_hint in SUPPORTED_LANGS:
+                text, conf = _transcribe_audio(audio_bytes, language_hint)
+            else:
+                text, detected_lang, conf = _try_all_languages(audio_bytes)
+                if text:
+                    detected_lang = _detect_language(text)
+        except Exception as exc:
+            text, conf = "", 0.0
+            google_error = str(exc)
+            logger.warning("Google transcription failed; trying local Whisper: %s", exc)
+
+        if not text:
+            try:
+                text, detected_lang, conf = _transcribe_with_local_whisper(
+                    audio_bytes,
+                    language_hint if language_hint in SUPPORTED_LANGS else None,
+                )
+            except Exception as exc:
+                logger.exception("Local Whisper fallback failed")
+                reason = f"Google: {google_error}; " if google_error else ""
+                return VoiceTranscript(
+                    original_text="", detected_language="en", language_name="English",
+                    english_text="", confidence=0.0,
+                    error=(
+                        f"Speech recognition could not transcribe this recording. {reason}"
+                        f"Local transcription fallback failed: {exc}"
+                    ),
+                )
 
         if not text:
             return VoiceTranscript(
                 original_text="", detected_language="en", language_name="English",
                 english_text="", confidence=0.0,
-                error="Could not understand audio — please speak clearly and try again.",
+                error="No speech was detected. Try speaking closer to the microphone and record again.",
             )
 
         english_text = _translate_to_english(text, detected_lang)
