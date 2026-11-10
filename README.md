@@ -144,6 +144,14 @@ cp .env.example .env          # defaults work out of the box
 docker compose up --build
 ```
 
+If you already have a PostgreSQL Docker volume from an earlier version, init
+scripts do not run again automatically. Apply the new report-severity column once:
+
+```bash
+docker compose exec -T db psql -U pothole -d potholedb \
+  -c "ALTER TABLE pothole_report ADD COLUMN IF NOT EXISTS user_severity_hint VARCHAR(10) CHECK (user_severity_hint IN ('low', 'medium', 'high', 'critical'));"
+```
+
 | Service | URL |
 |---|---|
 | FastAPI + Swagger UI | http://localhost:8000/docs |
