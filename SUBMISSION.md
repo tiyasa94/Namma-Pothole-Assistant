@@ -241,9 +241,7 @@ discipline required for a production-quality prototype.
 
 ---
 
-## Judging Criteria — How This Submission Addresses Each
-
-### (a) Completeness and Feasibility — 5 points
+### (a) Completeness and Feasibility
 
 **Completeness:**
 All five core features are implemented and demo-ready: citizen reporting (photo + voice),
@@ -264,7 +262,7 @@ by ~5× compared to solo engineering.
 
 ---
 
-### (b) Creativity and Innovation — 5 points
+### (b) Creativity and Innovation 
 
 **Originality:**
 No existing app combines pothole severity AI + road quality scoring + route comparison
@@ -288,7 +286,7 @@ requiring a paid model or labelled training run.
 
 ---
 
-### (c) Design and Usability — 5 points
+### (c) Design and Usability 
 
 **Two-persona UX:**
 The Streamlit app has a single, obvious tab split: `🧑 Citizen — Report & Navigate` vs.
@@ -315,7 +313,7 @@ Log a work order in under a minute. Mark complete → done. No training required
 
 ---
 
-### (d) Effectiveness and Efficiency — 5 points
+### (d) Effectiveness and Efficiency
 
 **Effectiveness:**
 The measurable outcome is defined, trackable, and grounded in real-world data:
@@ -344,24 +342,6 @@ vehicle-damage savings.
 | BBMP has no prioritisation data | Heatmap + quality score per H3 cell | Dark-red zones = send crew here first |
 | No accountability after repair | Maintenance logger + auto score refresh | Mark completed → citizens see improvement immediately |
 | Language barrier for Kannada speakers | Voice reporting with Kannada ASR | Transcription + English translation returned in response |
-
----
-
-## Video Demo — What to Show
-
-> Record a 3–5 minute screen capture with voiceover.
-
-**Suggested structure:**
-
-| Segment | Duration | Content |
-|---|---|---|
-| Hook | 0:00–0:20 | "Every monsoon, Bengaluru's roads become a minefield — and no app warns you where." |
-| Problem | 0:20–0:50 | Show Twitter pothole complaints. Open Google Maps — it picks the route with the worst road quality. |
-| Citizen demo | 0:50–2:10 | Pin map near Koramangala → upload road photo → Submit → watch ML result appear (severity + confidence) → Route Planner → 3 routes scored → best route highlighted 🏆 |
-| BBMP demo | 2:10–3:00 | Switch to BBMP tab → heatmap with red/amber hexagons → log work order → mark completed → 🎉 → explain score auto-refreshes |
-| Bob story | 3:00–3:45 | Split screen: Bob chat + code. Show one real conversation (e.g. the scoring formula session). State: "Full backend scaffolded with Bob in < 1.5 days — estimated 7–9 days solo." |
-| Impact | 3:45–4:15 | State the measurable outcome. Show the score delta between ORR (49/100) and Silk Board (81/100). |
-| Close | 4:15–4:30 | "Namma Pothole Assistant — from pothole to patch in 60 seconds." |
 
 ---
 
