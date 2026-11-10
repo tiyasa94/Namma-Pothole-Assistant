@@ -296,8 +296,9 @@ The Streamlit app has a single, obvious tab split: `🧑 Citizen — Report & Na
 
 **Citizen flow — designed to be < 30 seconds:**
 1. Click map to pin location.
-2. Upload the required photo, choose severity, and type a description or use the microphone to dictate it.
-3. Hit Submit.
+2. Upload the required photo.
+3. Type a description or use the microphone to dictate it, then choose severity.
+4. Hit Submit.
 Done. The ML result appears automatically — the citizen does not manage a pipeline.
 
 **Accessibility:**

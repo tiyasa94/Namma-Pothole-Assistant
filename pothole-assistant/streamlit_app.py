@@ -73,13 +73,21 @@ st.markdown("""
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def api_post(path: str, payload: dict, token: str = None) -> dict | None:
+def api_post(path: str, payload: dict, token: str = None, timeout: int = 15) -> dict | None:
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     try:
-        r = requests.post(f"{API_BASE}{path}", json=payload, headers=headers, timeout=15)
-        return r.json()
+        r = requests.post(f"{API_BASE}{path}", json=payload, headers=headers, timeout=timeout)
+        try:
+            data = r.json()
+        except ValueError:
+            detail = (
+                f"API returned a non-JSON response (HTTP {r.status_code}). "
+                "Check the API container logs and confirm the database migration has run."
+            )
+            return {"detail": detail}
+        return data
     except Exception as e:
         st.error(f"API error: {e}")
         return None
@@ -88,7 +96,11 @@ def api_post(path: str, payload: dict, token: str = None) -> dict | None:
 def api_get(path: str, params: dict = None) -> dict | None:
     try:
         r = requests.get(f"{API_BASE}{path}", params=params, timeout=15)
-        return r.json()
+        try:
+            return r.json()
+        except ValueError:
+            st.error(f"API returned a non-JSON response (HTTP {r.status_code}).")
+            return None
     except Exception as e:
         st.error(f"API error: {e}")
         return None
@@ -144,7 +156,7 @@ st.markdown(
     <p style="font-size:15px; color:#4b5563; line-height:1.7; margin-top:-6px;">
     Bengaluru generates thousands of pothole complaints every monsoon — yet most go unresolved for weeks.
     <b>Namma Pothole Assistant</b> bridges the gap between citizens and the BBMP by letting anyone report
-    a pothole in seconds with a required photo and a written or spoken description. AI automatically assesses severity, pins the location
+    a pothole with a required photo, description, and severity. AI automatically assesses severity, pins the location
     on a live map, and scores every road in real time. Commuters get the safest route before they leave home.
     Officers see exactly which streets need urgent repair — no spreadsheets, no guesswork.
     </p>
@@ -181,10 +193,8 @@ which route has the fewest potholes before he leaves home.
 
         st.markdown("### 📍 Report a Pothole")
         st.markdown("""
-Report a pothole in **3 steps** — pin the location, upload a required photo,
-choose a severity, and describe what you see. Prefer speaking? Record your
-description in English, Hindi, or Kannada. The photo and severity are required
-for both reporting options.
+Report a pothole in **3 steps** — pin the location, upload a photo, then type
+or record a description. Choose the severity and submit the report.
         """)
         st.divider()
 
@@ -218,115 +228,100 @@ for both reporting options.
 
         st.divider()
 
-        # ── Step 2 + 3: required photo, description, and severity ────────────
-        col_photo, col_voice = st.columns([3, 2])
+        # ── Step 2: required photo ────────────────────────────────────────────
+        st.markdown("#### 📸 Step 2 — Upload a photo")
+        uploaded = st.file_uploader(
+            "Upload a photo of the pothole *",
+            type=["jpg", "jpeg", "png"],
+            help="A photo is required so the ML engine can verify the pothole.",
+            key="pothole_photo",
+        )
+        if uploaded:
+            st.image(uploaded, use_container_width=True)
 
-        # A voice transcript is transferred before the text widget is created.
+        st.divider()
+
+        # ── Step 3: typed or spoken description ──────────────────────────────
+        st.markdown("#### 📝 Step 3 — Describe the pothole")
         pending_description = st.session_state.pop("pending_voice_description", None)
         if pending_description:
             st.session_state["photo_desc"] = pending_description
 
-        with col_photo:
-            st.markdown("#### 📸 Step 2a — Photo report")
-            st.caption("Photo, description, and severity are required")
+        description = st.text_area(
+            "Description *",
+            placeholder="e.g. Deep pothole near the bus stop, water-logged after rain",
+            max_chars=500,
+            key="photo_desc",
+            help="Type a description or use the microphone below. You can edit the transcript.",
+        )
+        st.caption("Prefer speaking? Record a description in English, Hindi, or Kannada.")
 
-            uploaded = st.file_uploader(
-                "Upload a photo of the pothole *",
-                type=["jpg", "jpeg", "png"],
-                help="A photo is required so the ML engine can verify the pothole",
-                key="pothole_photo",
-            )
-            if uploaded:
-                st.image(uploaded, use_container_width=True)
+        audio_value = st.audio_input("🎙️ Record your description", key="voice_mic")
+        voice_col1, voice_col2 = st.columns([2, 3])
+        lang_hint = voice_col1.selectbox(
+            "Spoken language",
+            ["Auto-detect", "English", "Hindi", "Kannada"],
+            key="voice_lang",
+        )
+        selected_lang = {
+            "Auto-detect": None,
+            "English": "en",
+            "Hindi": "hi",
+            "Kannada": "kn",
+        }[lang_hint]
 
-            description = st.text_area(
-                "Describe the pothole *",
-                placeholder="e.g. Deep pothole near the bus stop, water-logged after rain",
-                max_chars=500,
-                key="photo_desc",
-            )
-            severity_choice = st.selectbox(
-                "How severe does it look? *",
-                options=["Choose a severity", "low", "medium", "high", "critical"],
-                index=0,
-                key="severity_choice",
-            )
-            severity_hint = None if severity_choice == "Choose a severity" else severity_choice
+        if voice_col2.button("🎙️ Transcribe and fill description", key="transcribe_voice"):
+            if not audio_value:
+                st.warning("Record a voice description first.")
+            else:
+                audio_value.seek(0)
+                audio_b64 = base64.b64encode(audio_value.read()).decode("utf-8")
+                with st.spinner("Transcribing audio…"):
+                    transcript = api_post(
+                        "/voice-report/transcribe",
+                        {"audio_base64": audio_b64, "language_hint": selected_lang},
+                        timeout=90,
+                    )
+                if transcript and transcript.get("english_text"):
+                    st.session_state["pending_voice_description"] = transcript["english_text"]
+                    st.session_state.voice_result = transcript
+                    st.rerun()
+                elif transcript:
+                    st.error(transcript.get("detail", "Transcription failed. Please try again."))
 
-            if st.button("🚀 Submit Pothole Report", type="primary", use_container_width=True):
-                missing = []
-                if not uploaded:
-                    missing.append("a pothole photo")
-                if not description or not description.strip():
-                    missing.append("a description or voice transcript")
-                if not severity_hint:
-                    missing.append("a severity")
+        severity_choice = st.selectbox(
+            "How severe does it look? *",
+            options=["Choose a severity", "low", "medium", "high", "critical"],
+            index=0,
+            key="severity_choice",
+        )
+        severity_hint = None if severity_choice == "Choose a severity" else severity_choice
 
-                if missing:
-                    st.error("Please provide " + ", ".join(missing) + ".")
-                else:
-                    pin = st.session_state.report_pin
-                    uploaded.seek(0)
-                    payload = {
-                        "lat": pin["lat"], "lng": pin["lng"],
-                        "description": description.strip(),
-                        "source": "voice" if st.session_state.get("voice_result") else "photo",
-                        "severity_hint": severity_hint,
-                        "image_base64": img_to_b64(uploaded),
-                    }
-                    with st.spinner("Submitting…"):
-                        st.session_state.report_result = api_post("/reports/", payload)
-                        st.session_state.voice_result = None
+        if st.button("🚀 Submit Pothole Report", type="primary", use_container_width=True):
+            missing = []
+            if not uploaded:
+                missing.append("a pothole photo")
+            if not description or not description.strip():
+                missing.append("a description")
+            if not severity_hint:
+                missing.append("a severity")
 
-        with col_voice:
-            st.markdown("#### 🎙️ Step 2b — Voice description")
-            st.markdown("""
-<div class="story-box" style="border-left-color:#7c3aed">
-<b>Prefer speaking?</b> Record a voice note instead of typing the description.
-The transcript fills the description field. A photo and severity are still required.
-</div>
-""", unsafe_allow_html=True)
-
-            st.markdown("**Speak naturally in any of these languages:**")
-            st.markdown("""
-| Language | What to say |
-|---|---|
-| 🇬🇧 **English** | *"There is a big pothole here, it is very dangerous and filled with water"* |
-| 🇮🇳 **Hindi** | *"यहाँ बहुत बड़ा गड्ढा है, बहुत खतरनाक है, पानी भरा हुआ है"* |
-| 🏴 **Kannada** | *"ಇಲ್ಲಿ ತುಂಬಾ ದೊಡ್ಡ ಗುಂಡಿ ಇದೆ, ತುಂಬಾ ಅಪಾಯಕಾರಿ, ನೀರು ತುಂಬಿದೆ"* |
-            """)
-            st.caption("Mention size, depth, water, or nearby landmarks — the more detail the better.")
-
-            audio_value = st.audio_input(
-                "🎙️ Record a voice description",
-                key="voice_mic",
-            )
-            lang_hint = st.selectbox(
-                "Language (or auto-detect)",
-                ["Auto-detect", "English (en)", "Hindi (hi)", "Kannada (kn)"],
-                key="voice_lang",
-            )
-            selected_lang = {
-                "Auto-detect": None, "English (en)": "en",
-                "Hindi (hi)": "hi", "Kannada (kn)": "kn",
-            }[lang_hint]
-
-            if st.button("🎙️ Transcribe description", type="secondary", use_container_width=True):
-                if not audio_value:
-                    st.warning("Please record a voice message first — tap the mic above.")
-                else:
-                    audio_b64 = base64.b64encode(audio_value.read()).decode("utf-8")
-                    with st.spinner("Transcribing audio…"):
-                        transcript = api_post("/voice-report/transcribe", {
-                            "audio_base64": audio_b64,
-                            "language_hint": selected_lang,
-                        })
-                    if transcript and transcript.get("english_text"):
-                        st.session_state["pending_voice_description"] = transcript["english_text"]
-                        st.session_state.voice_result = transcript
-                        st.rerun()
-                    elif transcript:
-                        st.error(transcript.get("detail", "Could not transcribe the recording."))
+            if missing:
+                st.error("Please provide " + ", ".join(missing) + ".")
+            else:
+                pin = st.session_state.report_pin
+                uploaded.seek(0)
+                payload = {
+                    "lat": pin["lat"],
+                    "lng": pin["lng"],
+                    "description": description.strip(),
+                    "source": "voice" if st.session_state.get("voice_result") else "photo",
+                    "severity_hint": severity_hint,
+                    "image_base64": img_to_b64(uploaded),
+                }
+                with st.spinner("Submitting report…"):
+                    st.session_state.report_result = api_post("/reports/", payload)
+                    st.session_state.voice_result = None
 
         # ── Result display (shared, below both columns) ───────────────────────
         st.divider()
@@ -379,7 +374,7 @@ Confidence: <b>{conf:.0%}</b> &nbsp;·&nbsp; Pothole covers <b>{area_pct:.1f}%</
         # Voice transcription result
         v = st.session_state.voice_result
         if v:
-            st.success("✅ Voice description added. Complete the photo and severity fields, then submit the report.")
+            st.success("✅ Transcript added to the description field. Review it and submit your report.")
             st.caption(
                 f"Language: {v.get('language_name', '–')} · "
                 f"Transcription confidence: {v.get('transcription_confidence', 0):.0%}"

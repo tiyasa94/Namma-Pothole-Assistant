@@ -33,8 +33,8 @@ Every monsoon, ~50,000 potholes appear across the city. Residents have no way to
 ### Citizen flow
 1. Open the **🧑 Citizen — Report & Navigate** tab.
 2. Click the map near any Bengaluru location to move the pin.
-3. Upload a pothole photo (JPEG/PNG) and choose a severity.
-4. Type a description, or record a voice note and transcribe it into the description field.
+3. Upload the required pothole photo (JPEG/PNG).
+4. Type the description or record a voice note to transcribe it into the description field; then choose a severity.
 5. Hit **🚀 Submit Pothole Report**. A photo, description, and severity are required. Instant confirmation: `report_id` + H3 cell.
 6. Hit **🔄 Check ML Status** — severity badge, confidence %, and pixel area appear.
 7. Switch to **🗺️ Route Planner** → pick a preset route → **🔍 Score My Route** → see routes ranked, best first.

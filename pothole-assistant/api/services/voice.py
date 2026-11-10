@@ -162,6 +162,9 @@ def _try_all_languages(audio_bytes: bytes) -> tuple[str, str, float]:
     best_text = ""
     best_lang = "en"
     best_conf = 0.0
+    request_errors = []
+
+    import speech_recognition as sr
 
     for lang in SUPPORTED_LANGS:
         try:
@@ -170,8 +173,17 @@ def _try_all_languages(audio_bytes: bytes) -> tuple[str, str, float]:
                 best_text = text
                 best_lang = lang
                 best_conf = conf
+        except sr.RequestError as exc:
+            request_errors.append(str(exc))
         except Exception as exc:
             logger.debug("Transcription attempt for %s failed: %s", lang, exc)
+
+    # Do not report a network outage as unintelligible speech.
+    if not best_text and request_errors:
+        raise RuntimeError(
+            "Speech recognition could not reach Google. Check that the API "
+            "container has internet access, or choose a language and try again."
+        )
 
     return best_text, best_lang, best_conf
 
