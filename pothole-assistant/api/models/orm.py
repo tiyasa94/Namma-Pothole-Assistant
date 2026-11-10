@@ -60,6 +60,7 @@ class PotholeReport(Base):
     h3_index_r9 = Column(String(15), index=True)
     image_url = Column(Text)
     severity = Column(String(10), nullable=True)        # low|medium|high|critical
+    user_severity_hint = Column(String(10), nullable=True)
     ml_confidence = Column(Float, nullable=True)
     pixel_area_pct = Column(Float, nullable=True)
     status = Column(String(20), default="pending", index=True)

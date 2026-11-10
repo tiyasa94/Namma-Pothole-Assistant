@@ -82,7 +82,7 @@ pothole-assistant/
 │   │   ├── route_score.py       # GET  /v1/route/score — multi-route quality scorer
 │   │   ├── heatmap.py           # GET  /v1/heatmap — H3 GeoJSON heatmap
 │   │   ├── maintenance.py       # POST /v1/maintenance — BBMP work orders
-│   │   └── voice_report.py      # POST /v1/voice-report — audio transcription
+│   │   └── voice_report.py      # POST /v1/voice-report/transcribe — audio transcription
 │   ├── ml_engine/
 │   │   └── detector.py          # YOLOv8 + heuristic 2-stage ML pipeline
 │   ├── services/
@@ -141,7 +141,7 @@ Interactive API docs: `http://localhost:8000/docs`
 4. Hit **Check ML Status** → ML result card shows severity badge, confidence %, pixel area %.
 5. Switch to **Route Planner** → pick a preset Bengaluru route → hit **Score My Route**
    → up to 5 routes scored and sorted best-first, worst stretch pinned on the map.
-6. Alternatively: record a voice note in English, Hindi, or Kannada — transcribed and filed automatically.
+6. Alternatively: record a voice note in English, Hindi, or Kannada to fill the description, then submit with the required photo and severity.
 
 **🏛️ BBMP Officer — Monitor & Maintain**
 
@@ -296,7 +296,7 @@ The Streamlit app has a single, obvious tab split: `🧑 Citizen — Report & Na
 
 **Citizen flow — designed to be < 30 seconds:**
 1. Click map to pin location.
-2. Upload photo (optional) or tap microphone.
+2. Upload the required photo, choose severity, and type a description or use the microphone to dictate it.
 3. Hit Submit.
 Done. The ML result appears automatically — the citizen does not manage a pipeline.
 

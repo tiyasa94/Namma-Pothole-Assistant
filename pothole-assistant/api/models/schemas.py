@@ -4,7 +4,7 @@ Pydantic request/response schemas for all API endpoints.
 from __future__ import annotations
 
 import uuid
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -14,18 +14,25 @@ from pydantic import BaseModel, Field, field_validator
 class ReportCreate(BaseModel):
     lat: float = Field(..., ge=-90, le=90, description="WGS84 latitude")
     lng: float = Field(..., ge=-180, le=180, description="WGS84 longitude")
-    image_base64: Optional[str] = Field(
-        default=None,
-        description="Base64-encoded JPEG/PNG image. Omit if no photo available.",
-        json_schema_extra={"example": None},
+    image_base64: str = Field(
+        ...,
+        min_length=100,
+        description="Required base64-encoded JPEG/PNG image.",
     )
-    severity_hint: Optional[str] = Field(
-        default=None,
-        description="User's perceived severity: low | medium | high | critical",
-        json_schema_extra={"example": None},
+    severity_hint: Literal["low", "medium", "high", "critical"] = Field(
+        ...,
+        description="Required severity selected by the person submitting the report.",
     )
-    description: Optional[str] = Field(default=None, max_length=500)
-    source: str = Field("photo", description="photo | voice | passive_sensor")
+    description: str = Field(..., min_length=1, max_length=500)
+    source: Literal["photo", "voice"] = "photo"
+
+    @field_validator("description")
+    @classmethod
+    def description_must_not_be_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Description is required.")
+        return value
 
 
 class ReportResponse(BaseModel):
@@ -85,8 +92,6 @@ class MaintenanceResponse(BaseModel):
 # ── POST /voice-report ────────────────────────────────────────────────────────
 
 class VoiceReportCreate(BaseModel):
-    lat: float = Field(..., ge=-90, le=90, description="WGS84 latitude")
-    lng: float = Field(..., ge=-180, le=180, description="WGS84 longitude")
     audio_base64: str = Field(
         ...,
         description="Base64-encoded WAV/MP3/OGG audio (max ~10MB). "
@@ -101,16 +106,11 @@ class VoiceReportCreate(BaseModel):
 
 
 class VoiceReportResponse(BaseModel):
-    report_id: uuid.UUID
-    status: str
-    h3_cell: Optional[str]
-    road_segment_id: Optional[uuid.UUID]
     original_text: str               # transcribed in detected language
     detected_language: str           # "en" | "hi" | "kn"
     language_name: str               # "English" | "Hindi" | "Kannada"
     english_text: str                # always English
     transcription_confidence: float
-    estimated_verification_time_seconds: int = 30
 
 
 # ── GET /heatmap ───────────────────────────────────────────────────────────────

@@ -42,6 +42,7 @@ async def get_report(report_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
         "report_id":       str(row.id),
         "status":          row.status,
         "severity":        row.severity,
+        "user_severity_hint": row.user_severity_hint,
         "ml_confidence":   row.ml_confidence,
         "pixel_area_pct":  row.pixel_area_pct,
         "h3_cell":         row.h3_index_r9,
@@ -156,13 +157,16 @@ async def create_report(
     segment_row = snap_result.fetchone()
     road_segment_id = segment_row[0] if segment_row else None
 
-    # Save image to local storage if provided and looks like real base64
-    image_url = None
-    if body.image_base64 and len(body.image_base64) > 100:
-        try:
-            image_url = save_image_base64(body.image_base64, str("pending"))
-        except Exception as exc:
-            logger.warning("Image save failed (ignored): %s", exc)
+    # A photo is required. Reject invalid image data instead of creating a
+    # report that cannot be verified by the ML engine.
+    try:
+        image_url = save_image_base64(body.image_base64, "pending")
+    except Exception as exc:
+        logger.warning("Image save failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The uploaded photo could not be read. Please upload a JPG or PNG image.",
+        ) from exc
 
     # Persist initial pending record
     report = PotholeReport(
@@ -172,21 +176,21 @@ async def create_report(
         source=body.source,
         description=body.description,
         image_url=image_url,
+        user_severity_hint=body.severity_hint,
         status="pending",
     )
     db.add(report)
     await db.commit()
     await db.refresh(report)
 
-    # Kick off ML analysis in the background if an image was provided
-    if body.image_base64:
-        background_tasks.add_task(
-            _run_ml_and_update,
-            report.id,
-            body.image_base64,
-            db,
-            ml_engine,
-        )
+    # Photo is required, so every report is sent for background ML analysis.
+    background_tasks.add_task(
+        _run_ml_and_update,
+        report.id,
+        body.image_base64,
+        db,
+        ml_engine,
+    )
 
     return ReportResponse(
         report_id=report.id,

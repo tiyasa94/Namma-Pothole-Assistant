@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS pothole_report (
     image_url        TEXT,
     severity         VARCHAR(10)
                          CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+    user_severity_hint VARCHAR(10)
+                         CHECK (user_severity_hint IN ('low', 'medium', 'high', 'critical')),
     ml_confidence    FLOAT,
     pixel_area_pct   FLOAT,
     status           VARCHAR(20)  NOT NULL DEFAULT 'pending'
